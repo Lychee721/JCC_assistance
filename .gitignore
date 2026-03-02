@@ -1,0 +1,9 @@
+__pycache__/
+.pytest_cache/
+.venv/
+*.pyc
+_reference_academy_library/
+references/academy-library-upstream/
+data/vision/datasets/
+data/vision/artifacts/
+data/vision/debug_crops/
