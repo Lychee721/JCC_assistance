@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import torch
 from torch import nn
 from torch.optim import Adam
@@ -37,6 +38,52 @@ def evaluate(model: nn.Module, loader: DataLoader, criterion: nn.Module, device:
     return total_loss / max(total, 1), correct / max(total, 1)
 
 
+def save_training_plots(history: list[dict[str, float | int | str]], artifact_dir: Path) -> None:
+    if not history:
+        return
+
+    epochs = [entry["epoch"] for entry in history]
+    train_loss = [entry["train_loss"] for entry in history]
+    val_loss = [entry["val_loss"] for entry in history]
+    train_acc = [entry["train_acc"] for entry in history]
+    val_acc = [entry["val_acc"] for entry in history]
+    generalization_gap = [round(t - v, 4) for t, v in zip(train_acc, val_acc)]
+
+    plt.style.use("ggplot")
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(epochs, train_loss, marker="o", label="train_loss")
+    plt.plot(epochs, val_loss, marker="o", label="val_loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Classic CNN Loss Curve")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(artifact_dir / "loss_curve.png", dpi=200)
+    plt.close()
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(epochs, train_acc, marker="o", label="train_acc")
+    plt.plot(epochs, val_acc, marker="o", label="val_acc")
+    plt.xlabel("Epoch")
+    plt.ylabel("Accuracy")
+    plt.title("Classic CNN Accuracy Curve")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(artifact_dir / "accuracy_curve.png", dpi=200)
+    plt.close()
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(epochs, generalization_gap, marker="o", color="#d95f02")
+    plt.axhline(0.0, color="black", linewidth=1, linestyle="--")
+    plt.xlabel("Epoch")
+    plt.ylabel("Train Acc - Val Acc")
+    plt.title("Generalization Gap")
+    plt.tight_layout()
+    plt.savefig(artifact_dir / "generalization_gap.png", dpi=200)
+    plt.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train the classic CNN item classifier.")
     parser.add_argument("--data-root", default="data/vision/datasets/classifier_slots")
@@ -65,7 +112,7 @@ def main() -> None:
     classes_path = artifact_dir / "classes.json"
     classes_path.write_text(json.dumps(train_set.classes, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    scaler = torch.cuda.amp.GradScaler(enabled=device.type == "cuda")
+    scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
     best_val_acc = 0.0
     history = []
 
@@ -80,7 +127,7 @@ def main() -> None:
             labels = labels.to(device)
             optimizer.zero_grad(set_to_none=True)
 
-            with torch.cuda.amp.autocast(enabled=device.type == "cuda"):
+            with torch.amp.autocast(device_type="cuda", enabled=device.type == "cuda"):
                 logits = model(images)
                 loss = criterion(logits, labels)
 
@@ -109,6 +156,7 @@ def main() -> None:
             }
         )
         history_path.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+        save_training_plots(history, artifact_dir)
 
         if val_acc >= best_val_acc:
             best_val_acc = val_acc
