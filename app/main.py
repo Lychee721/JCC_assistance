@@ -16,6 +16,19 @@ demo_service = DemoScenarioService()
 app = FastAPI(title=config.name)
 
 
+def _maybe_enrich_answer_with_llm(request_payload: dict[str, object], payload: dict[str, object]) -> dict[str, object]:
+    if not config.enable_llm_preview:
+        return payload
+    llm_text = llm.generate_text(
+        request_payload,
+        payload,
+        user_question=request_payload.get("user_question") if isinstance(request_payload.get("user_question"), str) else None,
+    )
+    if llm_text:
+        payload["answer_text"] = llm_text
+    return payload
+
+
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
@@ -23,14 +36,15 @@ def healthz() -> dict[str, str]:
 
 @app.post("/v1/recommend/items", response_model=RecommendationResponse)
 def recommend_items(request: RecommendationRequest) -> RecommendationResponse:
-    payload = engine.build_payload(request.model_dump())
-    _messages = llm.build_messages(request.model_dump(), payload)
+    request_payload = request.model_dump()
+    payload = engine.build_payload(request_payload)
+    payload = _maybe_enrich_answer_with_llm(request_payload, payload)
     return RecommendationResponse(**payload)
 
 
 @app.get("/v1/demo/scenarios")
 def list_demo_scenarios() -> dict[str, list[dict[str, object]]]:
-    scenarios = []
+    scenarios: list[dict[str, object]] = []
     for scenario in demo_service.list_scenarios():
         scenarios.append(
             {
@@ -54,6 +68,7 @@ def run_demo_scenario(scenario_id: str) -> RecommendationResponse:
     request_payload["scenario_id"] = scenario["scenario_id"]
     request_payload["scenario_title"] = scenario["title"]
     payload = engine.build_payload(request_payload)
+    payload = _maybe_enrich_answer_with_llm(request_payload, payload)
     payload["presentation_notes"] = scenario["presentation_focus"] + payload["presentation_notes"]
     return RecommendationResponse(**payload)
 
@@ -64,17 +79,17 @@ def recommend_from_replay(request: ReplayInferenceRequest) -> ReplayInferenceRes
 
     predictor = ReplayVisionPredictor(request.weights_path, request.classes_path)
     vision_payload = predictor.predict_screenshot(request.screenshot_path)
-    recommendation_payload = engine.build_payload(
-        {
-            "components": vision_payload["components"],
-            "target_champion": request.target_champion,
-            "intent": request.intent,
-            "stage": request.stage,
-            "user_question": "根据游戏回放截图推荐装备",
-        }
-    )
+    replay_request_payload = {
+        "components": vision_payload["components"],
+        "target_champion": request.target_champion,
+        "intent": request.intent,
+        "stage": request.stage,
+        "user_question": "Based on current components and stage, give me three priority crafts.",
+    }
+    recommendation_payload = engine.build_payload(replay_request_payload)
+    recommendation_payload = _maybe_enrich_answer_with_llm(replay_request_payload, recommendation_payload)
     recommendation = RecommendationResponse(**recommendation_payload)
-    slot_predictions = []
+    slot_predictions: list[dict[str, str | float | list[int]]] = []
     for detection in vision_payload["detections"]:
         slot_predictions.append(
             {
