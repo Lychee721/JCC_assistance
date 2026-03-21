@@ -5,6 +5,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 from PIL import Image
 
@@ -54,13 +55,33 @@ class ReplayVisionPredictor:
             "margin": round(margin, 4),
         }
 
-    def predict_screenshot(self, screenshot_path: str | Path, confidence_threshold: float = 0.55) -> dict[str, Any]:
+    def _slot_index(self, slot_id: str) -> int:
+        return int(slot_id.split("_")[-1])
+
+    def predict_screenshot(
+        self,
+        screenshot_path: str | Path,
+        confidence_threshold: float = 0.55,
+        min_texture_std: float = 10.0,
+    ) -> dict[str, Any]:
         screenshot = Image.open(screenshot_path).convert("RGB")
         results = []
         component_counter: Counter[str] = Counter()
         special_counter: Counter[str] = Counter()
+        second_column_active = self.cropper.is_second_column_active(screenshot)
         for cropped_slot in self.cropper.crop_slots(screenshot):
-            prediction = self.predict_slot(cropped_slot.image)
+            slot_id = cropped_slot.slot_id
+            slot_index = self._slot_index(slot_id)
+
+            if (slot_index % 2 == 1) and (not second_column_active):
+                prediction = {"label": "empty_slot", "confidence": 1.0, "margin": 1.0}
+            else:
+                grayscale_std = float(np.asarray(cropped_slot.image.convert("L"), dtype=np.float32).std())
+                if grayscale_std < min_texture_std:
+                    prediction = {"label": "empty_slot", "confidence": 1.0, "margin": 1.0}
+                else:
+                    prediction = self.predict_slot(cropped_slot.image)
+
             label = prediction["label"]
             if label in self.component_ids and prediction["confidence"] >= confidence_threshold:
                 component_counter[label] += 1
@@ -70,7 +91,7 @@ class ReplayVisionPredictor:
                 special_counter["other_unknown"] += 1
             results.append(
                 {
-                    "slot_id": cropped_slot.slot_id,
+                    "slot_id": slot_id,
                     "box": cropped_slot.pixel_box,
                     **prediction,
                 }
