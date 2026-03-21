@@ -1,56 +1,65 @@
-# 金铲铲出装助手
+# JCC Assistance
 
-一个面向“散件识别 -> 可合成成装推荐 -> LLM 对话解释”的项目骨架。
+Repository: <https://github.com/Lychee721/JCC_assistance>
 
-当前仓库不是成品应用，而是一个可直接继续开发的底座，重点把 5 件事先整理好：
+中文 | [English](#english)
 
-1. 数据源与生成链路
-2. CNN 与 LLM 的职责边界
-3. 统一的数据 Schema
-4. 可运行的推荐引擎骨架
-5. 后续训练、API、前端联调所需的配置与示例
+---
 
-已核对并纳入设计的外部基座：
+## 中文说明
 
-- Riot TFT 开发文档: <https://developer.riotgames.com/docs/tft>
-- CommunityDragon: <https://raw.communitydragon.org/latest/cdragon/tft/en_us.json>
-- CommunityDragon 资源站: <https://communitydragon.org>
-- tacticians-academy `academy-library`: <https://github.com/tacticians-academy/academy-library>
+### 项目简介
 
-注意：
+`JCC Assistance` 是一个面向《金铲铲之战》出装辅助场景的课程项目。这个仓库将 CNN 视觉识别、规则约束的装备合成逻辑、以及 LLM 解释层组合在一起，构成一条可以演示、评估、并继续扩展的混合系统链路。
 
-- `data/seed/*.example.json` 现在只保留为兜底示例。
-- 当前默认运行时图谱已经改为由 `CommunityDragon latest` 快照生成。
-- 当前 patch 的真实图谱输出文件是 `data/processed/item_graph.runtime.json`。
+核心流程为：
 
-## 目录
+`截图 / 屏幕捕获 -> 装备栏裁剪 -> CNN 散件识别 -> 可合成装备枚举 -> 规则排序 -> LLM 解释`
+
+项目的重点不是做一个成熟的商业产品，而是验证以下问题：
+
+- 如何从真实游戏截图中稳定识别散件。
+- 如何在本地 item graph 约束下枚举可合成装备。
+- 如何让 LLM 负责解释与交互，而不是作为无约束的决策器。
+
+### 功能概览
+
+当前仓库包含：
+
+- CNN 训练与评估脚本
+- 基于截图和 replay 的视觉 demo
+- 规则驱动的装备推荐引擎
+- LLM 编排与解释模块
+- FastAPI 服务接口
+- 课程报告与实验图表
+
+### 仓库结构
 
 ```text
-app/                     FastAPI + 推荐引擎 + LLM 编排骨架
-configs/                 应用、模型、数据源配置
-data/
-  manifests/             外部数据源清单与路径规则
-  processed/             运行时生成数据
-  seed/                  演示用 seed 数据
-docs/                    设计文档
-examples/                请求/响应示例
-prompts/                 LLM 系统提示词与用户模板
+app/                     API、推荐引擎、LLM 编排、视觉推理
+configs/                 配置文件
+data/                    原始数据、处理产物、训练 artifact
+docs/                    设计文档与演示说明
+examples/                请求 / 响应示例
+prompts/                 LLM prompt 模板
+references/              参考资料与笔记
+Report/                  课程论文与 LaTeX 文件
 schemas/                 JSON Schema
-scripts/                 拉取、标准化、生成数据集脚本
-sql/                     推荐日志与会话存储表结构
-tests/                   核心推荐引擎测试
+scripts/                 数据处理、训练、评估、demo 脚本
+sql/                     存储结构
+tests/                   单元测试
 ```
 
-## 核心流程
+### 快速开始
 
-1. `scripts/fetch_cdragon_snapshot.py` 拉取 `CommunityDragon` 快照。
-2. `scripts/normalize_item_graph.py` 从当前 patch 快照生成统一 `item_graph.runtime.json`。
-3. `scripts/generate_synthetic_dataset.py` 基于 runtime component catalog 生成 CNN 训练清单。
-4. `app/recommendation_engine.py` 根据散件背包算出所有可合成成装并打分。
-5. `app/llm_orchestrator.py` 把结构化推荐结果组织成 LLM 可控回复。
-6. `app/main.py` 提供 `/v1/recommend/items` API。
+#### 1. 安装依赖
 
-## 快速开始
+```bash
+pip install -r requirements.txt
+pip install -r requirements-train.txt
+```
+
+#### 2. 构建装备图和合成数据
 
 ```bash
 python scripts/fetch_cdragon_snapshot.py --locale zh_cn
@@ -60,55 +69,215 @@ python scripts/generate_synthetic_dataset.py
 python -m unittest tests/test_recommendation_engine.py
 ```
 
-如需跑 API：
+#### 3. CNN 训练与评估
 
 ```bash
-pip install -r requirements.txt
+python scripts/build_synthetic_slot_dataset.py
+python scripts/bootstrap_annotation_csv.py
+python scripts/train_cnn.py
+python scripts/evaluate_cnn.py
+```
+
+#### 4. 启动 API
+
+```bash
 uvicorn app.main:app --reload
 ```
 
-## 作业展示
+可用接口：
 
-最稳的演示方式：
+- `GET /healthz`
+- `POST /v1/recommend/items`
+- `GET /v1/demo/scenarios`
+- `GET /v1/demo/run/{scenario_id}`
+- `POST /v1/recommend/replay-local`
+
+Swagger 文档：<http://127.0.0.1:8000/docs>
+
+#### 5. 运行 demo
+
+CLI 推荐 demo：
 
 ```bash
 python scripts/demo_cli.py --scenario ad_carry_stage_3
 ```
 
-如果要展示完整“CNN 识别回放界面 -> 推荐成装”链路，按这个顺序：
+CNN replay demo：
+
+```bash
+python scripts/run_replay_demo.py --screenshot your_screenshot.png --target-champion main_carry --intent carry_ad --stage 4-1
+```
+
+实时 overlay demo：
+
+```bash
+python scripts/live_overlay_demo.py --use-llm
+```
+
+若需启用 LLM，请先配置对应的 API key，例如：
+
+```bash
+set GEMINI_API_KEY=your_key_here
+```
+
+### 核心文档
+
+- [docs/architecture.md](docs/architecture.md)
+- [docs/cnn-llm-pipeline.md](docs/cnn-llm-pipeline.md)
+- [docs/data-sources.md](docs/data-sources.md)
+- [docs/demo-guide.md](docs/demo-guide.md)
+- [docs/modeling-focus.md](docs/modeling-focus.md)
+- [docs/vision-training.md](docs/vision-training.md)
+- [docs/roadmap.md](docs/roadmap.md)
+
+### 外部资源
+
+- Riot TFT Developer Docs: <https://developer.riotgames.com/docs/tft>
+- CommunityDragon assets: <https://communitydragon.org>
+- CommunityDragon raw snapshot: <https://raw.communitydragon.org/latest/cdragon/tft/en_us.json>
+- tacticians-academy `academy-library`: <https://github.com/tacticians-academy/academy-library>
+
+### 说明
+
+- 当前项目的核心目标是“散件识别 -> 装备推荐 -> LLM 解释”这条完整链路。
+- `completed_item` 和 `other_unknown` 这类开放 / 异质标签在当前版本中采用保守处理，后续可作为优化方向。
+- 课程报告与图表主要位于 `Report/` 和 `data/vision/artifacts/` 目录下。
+
+---
+
+## English
+
+### Overview
+
+`JCC Assistance` is a coursework project for a Golden Spatula / TFT-style item assistant. It combines CNN-based vision recognition, a constrained item-graph recommendation layer, and an LLM explanation module into one end-to-end pipeline.
+
+Core pipeline:
+
+`screenshot / screen capture -> slot cropping -> CNN component recognition -> craftable-item enumeration -> rule-based ranking -> LLM explanation`
+
+The repository is not intended as a polished commercial product. Instead, it is a structured hybrid system for studying:
+
+- how to recognize item components from real gameplay screenshots,
+- how to constrain recommendations with a local item graph,
+- and how to use an LLM for explanation and interaction rather than unconstrained decision making.
+
+### Features
+
+The repository currently includes:
+
+- CNN training and evaluation scripts
+- screenshot and replay based demos
+- a rule-based recommendation engine
+- an LLM orchestration layer
+- a FastAPI service
+- the course report and experiment figures
+
+### Repository Structure
+
+```text
+app/                     API, recommendation engine, LLM orchestration, vision inference
+configs/                 Configuration files
+data/                    Raw data, processed data, and training artifacts
+docs/                    Design notes and demo guides
+examples/                Request / response examples
+prompts/                 LLM prompt templates
+references/              References and notes
+Report/                  Paper and LaTeX sources
+schemas/                 JSON Schema files
+scripts/                 Data processing, training, evaluation, and demo scripts
+sql/                     Storage schemas
+tests/                   Unit tests
+```
+
+### Quick Start
+
+#### 1. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 pip install -r requirements-train.txt
-python scripts/build_synthetic_slot_dataset.py
-python scripts/train_cnn.py
-python scripts/run_replay_demo.py --screenshot 你的截图路径.png --target-champion 物理主C --intent carry_ad --stage 4-1
 ```
 
-如果要展示接口：
+#### 2. Build the item graph and synthetic recommendation data
 
-1. 启动 `uvicorn app.main:app --reload`
-2. 打开 `http://127.0.0.1:8000/docs`
-3. 依次演示：
-   `GET /healthz`
-   `GET /v1/demo/scenarios`
-   `GET /v1/demo/run/ad_carry_stage_3`
-   `POST /v1/recommend/items`
+```bash
+python scripts/fetch_cdragon_snapshot.py --locale zh_cn
+python scripts/fetch_cdragon_snapshot.py --locale en_us
+python scripts/normalize_item_graph.py
+python scripts/generate_synthetic_dataset.py
+python -m unittest tests/test_recommendation_engine.py
+```
 
-详细演示话术见：
+#### 3. Train and evaluate the CNN
 
-- [docs/demo-guide.md](/c:/Users/ASUS/Desktop/金铲铲助手/docs/demo-guide.md)
-- [docs/modeling-focus.md](/c:/Users/ASUS/Desktop/金铲铲助手/docs/modeling-focus.md)
-- [docs/vision-training.md](/c:/Users/ASUS/Desktop/金铲铲助手/docs/vision-training.md)
+```bash
+python scripts/build_synthetic_slot_dataset.py
+python scripts/bootstrap_annotation_csv.py
+python scripts/train_cnn.py
+python scripts/evaluate_cnn.py
+```
 
-## 建议开发顺序
+#### 4. Start the API
 
-1. 先跑通规则推荐链路，不依赖 LLM。
-2. 再接入截图识别，把 CNN 输出限定成结构化散件清单。
-3. 最后接 LLM，只负责解释、追问、交互，不负责“发明配方”。
+```bash
+uvicorn app.main:app --reload
+```
 
-详细设计见：
+Available endpoints:
 
-- [docs/architecture.md](/c:/Users/ASUS/Desktop/金铲铲助手/docs/architecture.md)
-- [docs/data-sources.md](/c:/Users/ASUS/Desktop/金铲铲助手/docs/data-sources.md)
-- [docs/cnn-llm-pipeline.md](/c:/Users/ASUS/Desktop/金铲铲助手/docs/cnn-llm-pipeline.md)
+- `GET /healthz`
+- `POST /v1/recommend/items`
+- `GET /v1/demo/scenarios`
+- `GET /v1/demo/run/{scenario_id}`
+- `POST /v1/recommend/replay-local`
+
+Swagger UI: <http://127.0.0.1:8000/docs>
+
+#### 5. Run demos
+
+CLI recommendation demo:
+
+```bash
+python scripts/demo_cli.py --scenario ad_carry_stage_3
+```
+
+CNN replay demo:
+
+```bash
+python scripts/run_replay_demo.py --screenshot your_screenshot.png --target-champion main_carry --intent carry_ad --stage 4-1
+```
+
+Live overlay demo:
+
+```bash
+python scripts/live_overlay_demo.py --use-llm
+```
+
+To enable the LLM path, set the corresponding API key first, for example:
+
+```bash
+set GEMINI_API_KEY=your_key_here
+```
+
+### Key Documentation
+
+- [docs/architecture.md](docs/architecture.md)
+- [docs/cnn-llm-pipeline.md](docs/cnn-llm-pipeline.md)
+- [docs/data-sources.md](docs/data-sources.md)
+- [docs/demo-guide.md](docs/demo-guide.md)
+- [docs/modeling-focus.md](docs/modeling-focus.md)
+- [docs/vision-training.md](docs/vision-training.md)
+- [docs/roadmap.md](docs/roadmap.md)
+
+### External Resources
+
+- Riot TFT Developer Docs: <https://developer.riotgames.com/docs/tft>
+- CommunityDragon assets: <https://communitydragon.org>
+- CommunityDragon raw snapshot: <https://raw.communitydragon.org/latest/cdragon/tft/en_us.json>
+- tacticians-academy `academy-library`: <https://github.com/tacticians-academy/academy-library>
+
+### Notes
+
+- The current project focuses on the full chain of component recognition, craft recommendation, and LLM explanation.
+- Open or heterogeneous labels such as `completed_item` and `other_unknown` are handled conservatively in the current version and remain future work.
+- The paper and experiment figures are mainly stored under `Report/` and `data/vision/artifacts/`.
